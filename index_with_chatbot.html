@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chat with TAJA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --brand:#8b0000; --bg:#f7f7f7; --card:#fff; --line:#e6e6e6;
+      --you:#eef5ff; --bot:#fff; --shadow:0 2px 10px rgba(0,0,0,.05);
+      --text:#111;
+    }
+    body{font-family:Arial, sans-serif;background:var(--bg);color:var(--text);margin:0;padding:30px;}
+    .card{max-width:860px;margin:0 auto;background:var(--card);border:1px solid var(--line);
+          border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);}
+    .title{display:flex;align-items:center;gap:10px;margin:0 0 8px;}
+    .title .dot{width:18px;height:18px;border-radius:50%;background:rgba(139,0,0,.15);box-shadow:inset 0 0 4px rgba(0,0,0,.1)}
+    h1{margin:0;color:var(--brand);font-size:28px;font-weight:800;letter-spacing:.3px;display:flex;align-items:center;gap:10px}
+    h1 img{width:22px;height:22px;border-radius:50%;vertical-align:middle}
+
+    #chatWrap{position:relative}
+    #chatBox{height:500px;border:1px solid #eee;border-radius:12px;background:#fafafa;
+             overflow-y:auto;overflow-x:hidden;padding:14px;}
+    .row{display:flex;flex-direction:column;margin:10px 0;}
+    .bubble{max-width:78%;padding:11px 12px;border-radius:12px;box-shadow:var(--shadow);
+            white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;line-height:1.4;font-size:15.5px;}
+    .you   {align-items:flex-end}
+    .you .bubble{background:var(--you);border:1px solid #dfe8ff}
+    .bot   {align-items:flex-start}
+    .bot .bubble{background:var(--bot);border:1px solid #eee}
+    .meta{font-size:12px;color:#777;margin-top:6px}
+
+    .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 10px;font-size:13px;cursor:pointer}
+
+    form{display:flex;gap:10px;margin-top:10px}
+    textarea{flex:1;resize:vertical;min-height:56px;max-height:180px;padding:12px;
+             font-size:16px;border-radius:12px;border:1px solid #ccc}
+    button{background:var(--brand);color:#fff;border:0;padding:12px 16px;border-radius:12px;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+    .btnSecondary{background:#444}
+    .btnLight{background:#777}
+
+    .typing{display:inline-flex;gap:6px;align-items:center}
+    .dot3{width:6px;height:6px;border-radius:50%;background:#999;opacity:.55;animation:blink 1.2s infinite}
+    .dot3:nth-child(2){animation-delay:.15s}.dot3:nth-child(3){animation-delay:.3s}
+    @keyframes blink{0%,80%,100%{transform:scale(.6);opacity:.55}40%{transform:scale(1);opacity:1}}
+
+    #toBottom{
+      position:absolute; right:14px; bottom:14px; display:none;
+      background:#fff; color:#333; border:1px solid #ddd; padding:6px 9px;
+      border-radius:999px; box-shadow:var(--shadow); cursor:pointer; font-size:13px;
+    }
+
+    /* simple markdown bits */
+    .msg h3{margin:8px 0 4px} .msg ul{margin:6px 0 6px 18px}
+    .err{color:#c00}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">
+      <span class="dot"></span>
+      <h1>
+        <img src="static/taja_logo_cut_maroon_32.png" alt="TAJA" onerror="this.style.display='none'">
+        Chat with TAJA
+      </h1>
+    </div>
+
+    <div id="chatWrap">
+      <div id="chatBox" aria-live="polite"></div>
+      <button id="toBottom" type="button">▼ New messages</button>
+    </div>
+
+<div class="chips" id="chips">
+  <div class="chip">Upcoming events</div>
+  <div class="chip">How to become a member</div>
+  <div class="chip">Who is the President?</div>
+  <div class="chip">Membership fees</div>
+  <div class="chip">Youth volunteer opportunities?</div>
+</div>
+
+
+    <form id="chatForm">
+      <textarea id="userInput" placeholder="Ask a question about TAJA… (Enter to send, Shift+Enter for newline)"></textarea>
+      <button id="sendBtn" type="submit">Send</button>
+    </form>
+
+    <div class="actions">
+      <button class="btnSecondary" id="copyBtn" type="button">Copy last answer</button>
+      <button class="btnSecondary" id="clearBtn" type="button">Clear chat</button>
+      <button class="btnLight" id="exportBtn" type="button">Export transcript</button>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "http://127.0.0.1:5001/chat";
+    const STORAGE_KEY = "taja_chat_history_v2";
+
+    const chatBox  = document.getElementById("chatBox");
+    const toBottom = document.getElementById("toBottom");
+    const chatForm = document.getElementById("chatForm");
+    const sendBtn  = document.getElementById("sendBtn");
+    const input    = document.getElementById("userInput");
+    const chips    = document.getElementById("chips");
+    const copyBtn  = document.getElementById("copyBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const exportBtn= document.getElementById("exportBtn");
+
+    const nowTime = () => new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const escapeHtml = s => (s||"").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    function boldifySafe(text){
+      const p = (text ?? "").split("**");
+      if (p.length < 3) return escapeHtml(text);
+      let out = "";
+      for (let i=0;i<p.length;i++) out += (i%2===0) ? escapeHtml(p[i]) : "<strong>"+escapeHtml(p[i])+"</strong>";
+      return out;
+    }
+    const autolink = s => s.replace(/(https?:\/\/[^\s<>()]+[^\s.,<>()])/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+    function renderTAJA(md){
+      const lines = (md || "").split(/\r?\n/); let out = "", inList = false;
+      const flush = ()=>{ if(inList){ out += "</ul>"; inList=false; } };
+      for(const raw of lines){
+        const line = raw.trimEnd();
+        if(/^\s*\*\s+/.test(line)){
+          if(!inList){ out += "<ul>"; inList=true; }
+          out += "<li class='msg'>" + autolink(boldifySafe(line.replace(/^\s*\*\s+/, ""))) + "</li>";
+          continue;
+        }
+        if(inList){ flush(); }
+        const h3 = line.match(/^\s*#{3}\s+(.*)/);
+        if(h3){ out += "<h3 class='msg'>" + escapeHtml(h3[1]) + "</h3>"; continue; }
+        if(line === ""){ out += "<br>"; continue; }
+        out += "<div class='msg'>" + autolink(boldifySafe(line)) + "</div>";
+      }
+      flush(); return out;
+    }
+
+    function addRow(role, html, timeStr, isHtml=false){
+      const row = document.createElement("div");
+      row.className = "row " + role;
+      const b = document.createElement("div");
+      b.className = "bubble";
+      b.innerHTML = isHtml ? html : escapeHtml(html);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = (role === "you" ? "You" : "TAJA Bot") + " • " + (timeStr || nowTime());
+      row.appendChild(b); row.appendChild(meta);
+      chatBox.appendChild(row);
+      if (isAtBottom()) chatBox.scrollTop = chatBox.scrollHeight;
+      return {row, bubble:b};
+    }
+
+    // history
+    function saveHistory(){
+      const items = [...chatBox.querySelectorAll(".row")].map(r=>{
+        return {
+          role: r.classList.contains("you") ? "you" : "bot",
+          html: r.querySelector(".bubble").innerHTML,
+          time: r.querySelector(".meta")?.textContent.split("•").pop().trim() || ""
+        };
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(-60)));
+    }
+    function restoreHistory(){
+      try{
+        const items = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        for(const it of items){ addRow(it.role, it.html, it.time, true); }
+      }catch(_){}
+    }
+
+    // scroll helpers
+    const isAtBottom = () => chatBox.scrollTop + chatBox.clientHeight >= chatBox.scrollHeight - 12;
+    chatBox.addEventListener("scroll", ()=>{
+      toBottom.style.display = isAtBottom() ? "none" : "inline-block";
+    });
+    toBottom.addEventListener("click", ()=>{
+      chatBox.scrollTop = chatBox.scrollHeight;
+      toBottom.style.display = "none";
+    });
+
+    // chips
+    chips.addEventListener("click",(e)=>{
+      const c = e.target.closest(".chip"); if(!c) return;
+      input.value = c.textContent.trim(); input.focus();
+    });
+
+    // copy / clear / export
+    copyBtn.addEventListener("click", ()=>{
+      const bots = [...chatBox.querySelectorAll(".bot .bubble")];
+      if(!bots.length) return alert("No bot answer yet.");
+      navigator.clipboard.writeText(bots[bots.length-1].innerText)
+        .then(()=>alert("Copied!")).catch(()=>alert("Copy failed."));
+    });
+    clearBtn.addEventListener("click", ()=>{
+      chatBox.innerHTML = ""; localStorage.removeItem(STORAGE_KEY);
+    });
+    exportBtn.addEventListener("click", ()=>{
+      const lines = [...chatBox.querySelectorAll(".row")].map(r=>{
+        const who = r.classList.contains("you") ? "You" : "TAJA Bot";
+        const time = r.querySelector(".meta")?.textContent.split("•").pop().trim() || "";
+        const txt = r.querySelector(".bubble").innerText;
+        return `[${time}] ${who}: ${txt}`;
+      });
+      const blob = new Blob([lines.join("\n")], {type:"text/plain"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "taja_chat_transcript.txt";
+      a.click(); URL.revokeObjectURL(a.href);
+    });
+
+    // Enter to send
+    input.addEventListener("keydown", (e)=>{
+      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); chatForm.requestSubmit(); }
+    });
+
+    // chat flow
+    chatForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = (input.value || "").trim();
+      if (!msg) return;
+
+      addRow("you", msg); saveHistory();
+      input.value = ""; sendBtn.disabled = true; sendBtn.textContent = "Thinking…";
+
+      // typing
+      const typing = addRow("bot", `<span class="typing"><span class="dot3"></span><span class="dot3"></span><span class="dot3"></span></span>`, null, true);
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: msg }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        typing.bubble.innerHTML = renderTAJA(data.response);
+      } catch (err) {
+        typing.bubble.innerHTML = `<span class="err">Error: ${escapeHtml(err.message || "Failed to fetch")}</span>`;
+      } finally {
+        saveHistory();
+        sendBtn.disabled = false; sendBtn.textContent = "Send";
+        if (isAtBottom()) chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    });
+
+    // boot
+    restoreHistory();
+  </script>
+</body>
+</html>

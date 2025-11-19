@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>TAJA Bot</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 700px; margin: auto; padding: 30px; background: #f3f3f3; }
+        h1 { color: darkred; }
+        textarea { width: 100%; margin-top: 10px; font-size: 16px; padding: 10px; border-radius: 6px; border: 1px solid #ccc; }
+        button { margin-top: 15px; font-size: 16px; padding: 10px 14px; border-radius: 6px; border: none; background: darkred; color: white; cursor: pointer; }
+        button:hover { filter: brightness(1.1); }
+        .response { background: white; padding: 15px; margin-top: 20px; border-radius: 8px; border: 1px solid #ddd; }
+        .copy-btn { margin-top: 10px; font-size: 14px; background: #444; color: #fff; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; }
+        .copy-btn:hover { filter: brightness(1.15); }
+    </style>
+</head>
+<body>
+    <h1>💬 TAJA Assistant</h1>
+    <form method="POST" onsubmit="setLoading()">
+        <textarea name="user_input" rows="4" placeholder="Ask a question..."></textarea><br>
+        <button id="submitBtn" type="submit">Submit</button>
+    </form>
+
+    {% if response %}
+        <div class="response" id="answerBox">
+            <strong>TAJA Bot:</strong> {{ response|safe }}
+        </div>
+        <button class="copy-btn" onclick="copyAnswer()">Copy Answer</button>
+    {% endif %}
+
+    <script>
+        function setLoading() {
+            const btn = document.getElementById("submitBtn");
+            btn.disabled = true;
+            btn.innerText = "Thinking…";
+        }
+
+        function copyAnswer() {
+            const ansBox = document.getElementById("answerBox");
+            if (ansBox) {
+                navigator.clipboard.writeText(ansBox.innerText)
+                    .then(() => alert("Answer copied to clipboard!"))
+                    .catch(err => alert("Failed to copy: " + err));
+            }
+        }
+    </script>
+</body>
+</html>
